@@ -1,0 +1,90 @@
+// This Pine Script® code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// © StimuliNetwork
+
+//@version=6
+indicator("Stimulian YT", overlay = true)
+
+// candle sentiment
+
+isUp(src) => src > src[1]
+
+bullColor  = color.green
+bearColor  = color.red
+upColor    = color.teal
+downColor  = color.maroon
+
+mean = (high + low + close + open) / 4
+
+plot(mean,
+     color = isUp(close) ? bullColor : bearColor,
+     show_last = 200)
+
+plotcandle(open, high, low, close,
+     color = na,
+     bordercolor = close > mean ? upColor : downColor,
+     wickcolor = close > open ? bullColor : bearColor,
+     show_last = 9)
+
+
+// bullish vs. bearish scenarios
+
+wma_9   = ta.wma(close, 9)
+wma_21  = ta.wma(close, 21)
+wma_50  = ta.wma(close, 50)
+wma_100 = ta.wma(close, 100)
+wma_200 = ta.wma(close, 200)
+
+// 9 & 21 WMAs
+plot(wma_9,
+     style = plot.style_circles,
+     color = isUp(wma_9) ? upColor : downColor,
+     show_last = 9)
+
+plot(wma_21,
+     style = plot.style_circles,
+     color = isUp(wma_21) ? upColor : downColor,
+     show_last = 21)
+
+// 50, 100 & 200 WMAs
+plot(wma_50,
+     color = isUp(wma_50) ? color.lime : bearColor,
+     linewidth = 2,
+     show_last = 50)
+
+plot(wma_100,
+     color = isUp(wma_100) ? color.lime : bearColor,
+     linewidth = 3,
+     show_last = 100)
+
+plot(wma_200,
+     color = isUp(wma_200) ? color.lime : bearColor,   // fixed bug here
+     linewidth = 4,
+     show_last = 200)
+
+
+// top vs. bottom signals
+
+// top signal
+topSignal =
+     wma_100 > wma_200 and
+     ta.crossover(wma_50, wma_100)
+
+plotshape(topSignal,
+     style = shape.xcross,
+     color = bearColor,
+     location = location.bottom,
+     size = size.small)
+
+// bottom signal
+bottomSignal =
+     wma_100 < wma_200 and
+     ta.crossunder(wma_50, wma_100)
+
+plotshape(bottomSignal,
+     style = shape.cross,
+     color = color.lime,
+     location = location.bottom,
+     size = size.small)
+
+
+//..to God be the Glory
