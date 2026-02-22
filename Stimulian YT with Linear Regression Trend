@@ -1,0 +1,150 @@
+// This Pine Script® code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// © StimuliNetwork
+
+//@version=6
+indicator("Stimulian YT", overlay = true)
+
+// candle sentiment
+
+isUp(src) => src > src[1]
+
+bullColor  = color.green
+bearColor  = color.red
+upColor    = color.teal
+downColor  = color.maroon
+
+mean = (high + low + close + open) / 4
+
+plot(mean,
+     color = isUp(close) ? bullColor : bearColor,
+     show_last = 200)
+
+plotcandle(open, high, low, close,
+     color = na,
+     bordercolor = close > mean ? upColor : downColor,
+     wickcolor = close > open ? bullColor : bearColor,
+     show_last = 9)
+
+
+// bullish vs. bearish scenarios
+
+wma_9   = ta.wma(close, 9)
+wma_21  = ta.wma(close, 21)
+wma_50  = ta.wma(close, 50)
+wma_100 = ta.wma(close, 100)
+wma_200 = ta.wma(close, 200)
+
+// 9 & 21 WMAs
+plot(wma_9,
+     style = plot.style_circles,
+     color = isUp(wma_9) ? upColor : downColor,
+     show_last = 9)
+
+plot(wma_21,
+     style = plot.style_circles,
+     color = isUp(wma_21) ? upColor : downColor,
+     show_last = 21)
+
+// 50, 100 & 200 WMAs
+plot(wma_50,
+     color = isUp(wma_50) ? color.lime : bearColor,
+     linewidth = 2,
+     show_last = 50)
+
+plot(wma_100,
+     color = isUp(wma_100) ? color.lime : bearColor,
+     linewidth = 3,
+     show_last = 100)
+
+plot(wma_200,
+     color = isUp(wma_200) ? color.lime : bearColor,   // fixed bug here
+     linewidth = 4,
+     show_last = 200)
+
+
+// top vs. bottom signals
+
+// top signal
+topSignal =
+     wma_100 > wma_200 and
+     ta.crossover(wma_50, wma_100)
+
+plotshape(topSignal,
+     style = shape.xcross,
+     color = bearColor,
+     location = location.bottom,
+     size = size.small)
+
+// bottom signal
+bottomSignal =
+     wma_100 < wma_200 and
+     ta.crossunder(wma_50, wma_100)
+
+plotshape(bottomSignal,
+     style = shape.cross,
+     color = color.lime,
+     location = location.bottom,
+     size = size.small)
+
+// Linear Regression Trend
+
+// User-defined input for period length
+length = input.int(100, title="Length")
+
+// Function to draw a line
+drawCustomLine(startBarIndex, startY, endBarIndex, endY, customExtendType, lineColor, lineStyle) =>
+    var line customLine = na
+    customLine := line.new(startBarIndex, startY, endBarIndex, endY, xloc.bar_index, customExtendType, lineColor, lineStyle, 1)
+    line.delete(customLine[1])
+
+// Function to calculate Regression, Slope, Deviation, Correlation, and R2
+calculateRegressionMetrics(periodLengthMinusOne, deviationMultiplier, estimatorChoice) =>
+    var totalBars = periodLengthMinusOne + 1
+    var devDenominator = estimatorChoice == "Unbiased" ? periodLengthMinusOne : totalBars
+    sumX = 0.0
+    sumXSquare = 0.0
+    sumXY = 0.0
+    sumY = 0.0
+    for i = 0 to periodLengthMinusOne
+        currentClose = nz(close[i])
+        sumX := sumX + i
+        sumXSquare := sumXSquare + i * i
+        sumXY := sumXY + currentClose * i
+        sumY := sumY + currentClose
+    sumXTimesX = sumX * sumX
+    regressionSlope = sumXSquare == sumXTimesX ? 0.0 : (totalBars * sumXY - sumX * sumY) / (totalBars * sumXSquare - sumXTimesX)
+    linearRegressionValue = (sumY - regressionSlope * sumX) / totalBars
+    regressionIntercept = linearRegressionValue + bar_index * regressionSlope
+    calculatedDeviation = 0.0
+    for i = 0 to periodLengthMinusOne
+        calculatedDeviation := calculatedDeviation + math.pow(nz(close[i]) - (regressionIntercept - bar_index[i] * regressionSlope), 2.0)
+    calculatedDeviation := deviationMultiplier * math.sqrt(calculatedDeviation / devDenominator)
+    correlationValue = ta.correlation(close, bar_index, totalBars)
+    rSquaredValue = math.pow(correlationValue, 2.0)
+    [linearRegressionValue, regressionSlope, calculatedDeviation, correlationValue, rSquaredValue]
+
+// Inputs
+trendPeriodInput = input.int(20, "Trend Period", minval=4)
+deviationMultiplierInput = input.float(2.0, "Deviation(s)", minval=0.1, step=0.1)
+estimatorTypeInput = input.string("Unbiased", "Estimator", options=["Biased", "Unbiased"])
+extensionType = input.string("Segment", "Extend Method", options=["Right", "Segment"]) == "Right" ? extend.right : extend.none
+
+periodLengthMinusOne = trendPeriodInput - 1
+
+// Calculate regression, slope, deviation, correlation, and R2
+[regressionLineValue, regressionSlope, channelDeviation, correlationCoefficient, rSquaredValue] = calculateRegressionMetrics(periodLengthMinusOne, deviationMultiplierInput, estimatorTypeInput)
+
+startBarIndex = bar_index - trendPeriodInput + 1
+startYValue = regressionLineValue + regressionSlope * periodLengthMinusOne
+
+// Draw the upper, middle, and lower lines for the regression channel
+drawCustomLine(startBarIndex, startYValue + channelDeviation, bar_index, regressionLineValue + channelDeviation, extensionType, color.new(#FF0000, 0), line.style_solid)
+drawCustomLine(startBarIndex, startYValue, bar_index, regressionLineValue, extensionType, color.new(#CCCC00, 0), line.style_dotted)
+drawCustomLine(startBarIndex, startYValue - channelDeviation, bar_index, regressionLineValue - channelDeviation, extensionType, color.new(#00FF00, 0), line.style_solid)
+
+// Display correlation and R2 label
+var label correlationLabel = na
+correlationLabel := label.new(math.max(0, startBarIndex), startYValue, text=str.tostring(correlationCoefficient, "#.####"), color=correlationCoefficient < 0.0 ? color.new(#AA0000, 100) : color.new(#00AA00, 100), textcolor=correlationCoefficient < 0.0 ? color.new(#AA0000, 0) : color.new(#00AA00, 0), style=label.style_label_right, tooltip="Correlation: " + str.tostring(correlationCoefficient) + "\nR2: " + str.tostring(rSquaredValue))
+label.delete(correlationLabel[1])
+
+//..to God be the Glory
